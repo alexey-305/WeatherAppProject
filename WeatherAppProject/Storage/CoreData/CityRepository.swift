@@ -4,23 +4,38 @@ final class CityRepository {
 
     private let context = CoreDataStack.shared.context
 
-    func addCity(name: String, lat: Double, lon: Double) {
+    // MARK: - Add
+
+    @discardableResult
+    func addCity(_ model: CityModel) -> CityEntity {
         let city = CityEntity(context: context)
-        city.id = UUID()
-        city.name = name
-        city.lat = lat
-        city.lon = lon
+        city.id = model.id
+        city.name = model.name
+        city.lat = model.lat
+        city.lon = model.lon
         save()
+        return city
     }
 
-    func fetchCities() -> [CityEntity] {
+    // MARK: - Fetch
+
+    func fetchCities() -> [CityModel] {
         let request: NSFetchRequest<CityEntity> = CityEntity.fetchRequest()
-        return (try? context.fetch(request)) ?? []
+        let result = (try? context.fetch(request)) ?? []
+        return result.map { entity in
+            CityModel(id: entity.id ?? UUID(), name: entity.name ?? "", lat: entity.lat, lon: entity.lon)
+        }
     }
 
-    func deleteCity(_ city: CityEntity) {
-        context.delete(city)
-        save()
+    // MARK: - Delete
+
+    func deleteCity(withId id: UUID) {
+        let request: NSFetchRequest<CityEntity> = CityEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        if let entity = try? context.fetch(request).first {
+            context.delete(entity)
+            save()
+        }
     }
 
     private func save() {

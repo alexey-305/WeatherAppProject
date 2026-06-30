@@ -8,6 +8,10 @@ final class LocationService: NSObject {
     var onLocationUpdate: ((Double, Double) -> Void)?
     var onError: ((Error) -> Void)?
 
+    var authorizationStatus: CLAuthorizationStatus {
+        manager.authorizationStatus
+    }
+
     override init() {
         super.init()
         manager.delegate = self
@@ -15,7 +19,19 @@ final class LocationService: NSObject {
     }
 
     func requestPermission() {
-        manager.requestWhenInUseAuthorization()
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            // Уже разрешено ранее — locationManagerDidChangeAuthorization
+            // может не сработать повторно на некоторых версиях iOS, дёргаем явно
+            requestLocation()
+        case .denied, .restricted:
+            onError?(NSError(domain: "Location", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: "Доступ к геолокации запрещён"]))
+        @unknown default:
+            onError?(NSError(domain: "Location", code: -2))
+        }
     }
 
     func requestLocation() {
@@ -27,11 +43,7 @@ extension LocationService: CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-
-        let lat = location.coordinate.latitude
-        let lon = location.coordinate.longitude
-
-        onLocationUpdate?(lat, lon)
+        onLocationUpdate?(location.coordinate.latitude, location.coordinate.longitude)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -43,7 +55,8 @@ extension LocationService: CLLocationManagerDelegate {
         case .authorizedWhenInUse, .authorizedAlways:
             requestLocation()
         case .denied, .restricted:
-            onError?(NSError(domain: "Location", code: -1))
+            onError?(NSError(domain: "Location", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: "Доступ запрещён"]))
         default:
             break
         }

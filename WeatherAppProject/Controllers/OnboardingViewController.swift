@@ -1,10 +1,11 @@
 import UIKit
-import CoreLocation
 
 final class OnboardingViewController: UIViewController {
 
     var onFinish: ((Double, Double) -> Void)?
-    private let locationManager = CLLocationManager()
+
+    // Теперь через сервисный слой, не напрямую CLLocationManager
+    private let locationService = LocationService()
 
     // MARK: - UI
 
@@ -65,10 +66,9 @@ final class OnboardingViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = UIColor(red: 0.12, green: 0.33, blue: 0.60, alpha: 1.0)
-        locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
         setupUI()
         setupActions()
+        setupLocationBindings()
     }
 
     // MARK: - Layout
@@ -81,27 +81,22 @@ final class OnboardingViewController: UIViewController {
         view.addSubview(laterButton)
 
         NSLayoutConstraint.activate([
-            // Картинка сверху
             imageView.topAnchor.constraint(equalTo: view.topAnchor, constant: 60),
             imageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             imageView.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.7),
             imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor),
 
-            // Заголовок — опустили ниже
             titleLabel.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 40),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
-            // Описание под заголовком
             descriptionLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
             descriptionLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             descriptionLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
-            // Кнопка "Нет" — подняли выше
             laterButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
             laterButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            // Кнопка "Разрешить" — над кнопкой "Нет"
             allowButton.bottomAnchor.constraint(equalTo: laterButton.topAnchor, constant: -12),
             allowButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             allowButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
@@ -114,19 +109,25 @@ final class OnboardingViewController: UIViewController {
         laterButton.addTarget(self, action: #selector(didTapLater), for: .touchUpInside)
     }
 
+    // MARK: - LocationService bindings
+
+    private func setupLocationBindings() {
+        locationService.onLocationUpdate = { [weak self] lat, lon in
+            self?.finish(lat: lat, lon: lon)
+        }
+        locationService.onError = { [weak self] _ in
+            // Отказ в доступе или сбой геолокации — идём с fallback
+            self?.finish(lat: 55.7558, lon: 37.6176)
+        }
+    }
+
     // MARK: - Actions
 
     @objc private func didTapAllow() {
-        switch locationManager.authorizationStatus {
-        case .notDetermined:
-            locationManager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse, .authorizedAlways:
-            locationManager.requestLocation()
-        case .denied, .restricted:
-            finish(lat: 55.7558, lon: 37.6176)
-        @unknown default:
-            finish(lat: 55.7558, lon: 37.6176)
-        }
+        // Сервис сам разруливает текущий статус: запросит разрешение если notDetermined,
+        // или сразу вызовет requestLocation если уже разрешено (через
+        // locationManagerDidChangeAuthorization внутри LocationService)
+        locationService.requestPermission()
     }
 
     @objc private func didTapLater() {
@@ -136,33 +137,5 @@ final class OnboardingViewController: UIViewController {
     private func finish(lat: Double, lon: Double) {
         UserDefaults.standard.set(true, forKey: "isOnboardingShown")
         onFinish?(lat, lon)
-    }
-}
-
-// MARK: - CLLocationManagerDelegate
-
-extension OnboardingViewController: CLLocationManagerDelegate {
-
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        switch manager.authorizationStatus {
-        case .authorizedWhenInUse, .authorizedAlways:
-            manager.requestLocation()
-        case .denied, .restricted:
-            finish(lat: 55.7558, lon: 37.6176)
-        default:
-            break
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.first else {
-            finish(lat: 55.7558, lon: 37.6176)
-            return
-        }
-        finish(lat: location.coordinate.latitude, lon: location.coordinate.longitude)
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        finish(lat: 55.7558, lon: 37.6176)
     }
 }

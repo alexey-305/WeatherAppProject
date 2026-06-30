@@ -4,7 +4,7 @@ final class MainViewController: UIViewController {
 
     weak var coordinator: MainCoordinator?
 
-    // Список городов: (название, lat, lon)
+    private let cityRepository = CityRepository()
     private var cities: [(name: String, lat: Double, lon: Double)] = []
     private var pageViewControllers: [CityWeatherViewController] = []
     private var currentIndex = 0
@@ -26,6 +26,8 @@ final class MainViewController: UIViewController {
 
     // MARK: - Init
 
+    /// Начальный (геолокационный или дефолтный) город — добавляется только если
+    /// в CoreData ещё ничего не сохранено
     func configure(cities: [(name: String, lat: Double, lon: Double)]) {
         self.cities = cities
     }
@@ -37,7 +39,21 @@ final class MainViewController: UIViewController {
         view.backgroundColor = UIColor(red: 0.97, green: 0.97, blue: 0.98, alpha: 1)
         setupNavigation()
         setupPageVC()
+        loadPersistedCities()
         buildPages()
+    }
+
+    // MARK: - Persistence
+
+    private func loadPersistedCities() {
+        let saved = cityRepository.fetchCities()
+        if !saved.isEmpty {
+            // CoreData главнее дефолтного города из координатора
+            cities = saved.map { (name: $0.name, lat: $0.lat, lon: $0.lon) }
+        } else if let first = cities.first {
+            // Первый запуск — сохраняем геолокационный город в CoreData
+            cityRepository.addCity(CityModel(name: first.name, lat: first.lat, lon: first.lon))
+        }
     }
 
     // MARK: - Navigation
@@ -106,6 +122,9 @@ final class MainViewController: UIViewController {
     func addCity(name: String, lat: Double, lon: Double) {
         cities.append((name: name, lat: lat, lon: lon))
 
+        // Сохраняем в CoreData — переживёт перезапуск приложения
+        cityRepository.addCity(CityModel(name: name, lat: lat, lon: lon))
+
         let vc = CityWeatherViewController()
         vc.cityName = name
         vc.coordinator = coordinator
@@ -116,7 +135,6 @@ final class MainViewController: UIViewController {
 
         pageControl.numberOfPages = pageViewControllers.count
 
-        // Переключаемся на новый город
         currentIndex = pageViewControllers.count - 1
         pageVC.setViewControllers([vc], direction: .forward, animated: true)
         pageControl.currentPage = currentIndex
