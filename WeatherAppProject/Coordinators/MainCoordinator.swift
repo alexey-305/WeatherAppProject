@@ -1,5 +1,4 @@
 import UIKit
-import CoreLocation
 
 final class MainCoordinator: Coordinator {
 
@@ -40,7 +39,7 @@ final class MainCoordinator: Coordinator {
         navigationController.visibleViewController?.present(vc, animated: true)
     }
 
-    // MARK: - Add City
+    // MARK: - Add City (через WeatherService.geocode, не CLGeocoder)
 
     func showAddCity(onAdded: @escaping (CityModel) -> Void) {
         let alert = UIAlertController(
@@ -58,16 +57,13 @@ final class MainCoordinator: Coordinator {
                   let text = alert?.textFields?.first?.text,
                   !text.isEmpty else { return }
 
-            print("🔍 Геокодируем:", text)
-
-            CLGeocoder().geocodeAddressString(text) { placemarks, error in
+            WeatherService.shared.geocode(city: text) { result in
                 DispatchQueue.main.async {
-                    if let place = placemarks?.first, let loc = place.location {
-                        let name = place.locality ?? place.name ?? text
-                        print("✅ Найден:", name)
-                        onAdded(CityModel(name: name, lat: loc.coordinate.latitude, lon: loc.coordinate.longitude))
-                    } else {
-                        print("❌ Не найден:", error?.localizedDescription ?? "")
+                    switch result {
+                    case .success(let geo):
+                        onAdded(CityModel(name: geo.name, lat: geo.lat, lon: geo.lon))
+                    case .failure(let error):
+                        print("❌ Геокодинг ошибка:", error)
                         let err = UIAlertController(
                             title: "Город не найден",
                             message: "Проверьте название и попробуйте снова",

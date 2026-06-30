@@ -2,7 +2,8 @@ import Foundation
 
 final class WeatherViewModel {
 
-    private let network = APIClient.shared
+    // Теперь работаем через сервисный слой, а не напрямую с APIClient
+    private let weatherService = WeatherService.shared
     private let cache = WeatherCacheRepository()
 
     private(set) var items: [ForecastItem] = []
@@ -24,7 +25,8 @@ final class WeatherViewModel {
         loadFromCache()
 
         guard let lat, let lon else {
-            onError?(NSError(domain: "WeatherViewModel", code: -1))
+            onError?(NSError(domain: "WeatherViewModel", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: "Координаты не заданы"]))
             return
         }
 
@@ -35,7 +37,6 @@ final class WeatherViewModel {
 
     private func loadFromCache() {
         let cached = cache.load()
-
         if !cached.isEmpty {
             self.items = cached
             self.onDataUpdate?()
@@ -46,23 +47,15 @@ final class WeatherViewModel {
         cache.save(items: items)
     }
 
-    // MARK: - Network
+    // MARK: - Network (через WeatherService)
 
     private func loadFromNetwork(lat: Double, lon: Double) {
-
-        guard let url = URL(string:
-            "https://api.openweathermap.org/data/2.5/forecast?lat=\(lat)&lon=\(lon)&appid=\(SecretsManager.shared.getAPIKey(for: "OpenWeatherAPIKey") ?? "")&units=metric&lang=ru"
-        ) else {
-            return
-        }
-
-        network.request(url: url) { [weak self] (result: Result<WeatherDTO, Error>) in
+        weatherService.fetchForecast(lat: lat, lon: lon) { [weak self] (result: Result<ForecastResponse, Error>) in
             guard let self else { return }
 
             switch result {
-            case .success(let dto):
-                let mapped = WeatherMapper.map(dto)
-
+            case .success(let response):
+                let mapped = WeatherMapper.map(response)
                 self.items = mapped
                 self.saveToCache(mapped)
                 self.onDataUpdate?()
@@ -80,12 +73,11 @@ final class WeatherViewModel {
         return items[index]
     }
 
-    var numberOfItems: Int {
-        items.count
-    }
+    var numberOfItems: Int { items.count }
 }
 
 // MARK: - Daily grouping
+
 extension WeatherViewModel {
     func dailyItems() -> [[ForecastItem]] {
         var groups: [String: [ForecastItem]] = [:]

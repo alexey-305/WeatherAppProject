@@ -2,8 +2,8 @@ import Foundation
 
 final class WeatherMapper {
 
-    static func map(_ dto: WeatherDTO) -> [ForecastItem] {
-        dto.list.map { item in
+    static func map(_ response: ForecastResponse) -> [ForecastItem] {
+        response.list.map { item in
             ForecastItem(
                 date: Date(timeIntervalSince1970: item.dt),
                 temperature: item.main.temp,
