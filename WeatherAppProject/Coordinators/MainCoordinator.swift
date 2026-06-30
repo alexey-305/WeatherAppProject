@@ -61,7 +61,7 @@ final class MainCoordinator: Coordinator {
                 DispatchQueue.main.async {
                     switch result {
                     case .success(let geo):
-                        onAdded(CityModel(name: geo.name, lat: geo.lat, lon: geo.lon))
+                        onAdded(CityModel(name: geo.displayName, lat: geo.lat, lon: geo.lon))
                     case .failure(let error):
                         print("❌ Геокодинг ошибка:", error)
                         let err = UIAlertController(

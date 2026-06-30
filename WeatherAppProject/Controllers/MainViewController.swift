@@ -5,7 +5,10 @@ final class MainViewController: UIViewController {
     weak var coordinator: MainCoordinator?
 
     private let cityRepository = CityRepository()
-    private var cities: [(name: String, lat: Double, lon: Double)] = []
+
+    // Теперь храним полноценные CityModel (с id) вместо анонимных кортежей,
+    // чтобы можно было находить и удалять конкретный город в CoreData
+    private var cities: [CityModel] = []
     private var pageViewControllers: [CityWeatherViewController] = []
     private var currentIndex = 0
 
@@ -26,10 +29,10 @@ final class MainViewController: UIViewController {
 
     // MARK: - Init
 
-    /// Начальный (геолокационный или дефолтный) город — добавляется только если
+    /// Начальный (геолокационный или дефолтный) город — используется только если
     /// в CoreData ещё ничего не сохранено
     func configure(cities: [(name: String, lat: Double, lon: Double)]) {
-        self.cities = cities
+        self.cities = cities.map { CityModel(name: $0.name, lat: $0.lat, lon: $0.lon) }
     }
 
     // MARK: - Lifecycle
@@ -49,10 +52,10 @@ final class MainViewController: UIViewController {
         let saved = cityRepository.fetchCities()
         if !saved.isEmpty {
             // CoreData главнее дефолтного города из координатора
-            cities = saved.map { (name: $0.name, lat: $0.lat, lon: $0.lon) }
+            cities = saved
         } else if let first = cities.first {
             // Первый запуск — сохраняем геолокационный город в CoreData
-            cityRepository.addCity(CityModel(name: first.name, lat: first.lat, lon: first.lon))
+            cityRepository.addCity(first)
         }
     }
 
@@ -100,15 +103,7 @@ final class MainViewController: UIViewController {
     }
 
     private func buildPages() {
-        pageViewControllers = cities.map { city in
-            let vc = CityWeatherViewController()
-            vc.cityName = city.name
-            vc.coordinator = coordinator
-            let vm = WeatherViewModel()
-            vm.setLocation(lat: city.lat, lon: city.lon)
-            vc.viewModel = vm
-            return vc
-        }
+        pageViewControllers = cities.map { makePage(for: $0) }
 
         pageControl.numberOfPages = pageViewControllers.count
         pageControl.currentPage = 0
@@ -119,18 +114,30 @@ final class MainViewController: UIViewController {
         }
     }
 
-    func addCity(name: String, lat: Double, lon: Double) {
-        cities.append((name: name, lat: lat, lon: lon))
-
-        // Сохраняем в CoreData — переживёт перезапуск приложения
-        cityRepository.addCity(CityModel(name: name, lat: lat, lon: lon))
-
+    /// Единая точка создания страницы города — используется и при первой
+    /// сборке, и при добавлении нового города, чтобы не дублировать конфигурацию
+    private func makePage(for city: CityModel) -> CityWeatherViewController {
         let vc = CityWeatherViewController()
-        vc.cityName = name
+        vc.cityName = city.name
         vc.coordinator = coordinator
         let vm = WeatherViewModel()
-        vm.setLocation(lat: lat, lon: lon)
+        vm.setLocation(lat: city.lat, lon: city.lon)
         vc.viewModel = vm
+        vc.onDeleteRequested = { [weak self, weak vc] in
+            guard let self, let vc else { return }
+            self.deleteCity(city, pageVC: vc)
+        }
+        return vc
+    }
+
+    func addCity(name: String, lat: Double, lon: Double) {
+        let city = CityModel(name: name, lat: lat, lon: lon)
+        cities.append(city)
+
+        // Сохраняем в CoreData — переживёт перезапуск приложения
+        cityRepository.addCity(city)
+
+        let vc = makePage(for: city)
         pageViewControllers.append(vc)
 
         pageControl.numberOfPages = pageViewControllers.count
@@ -139,6 +146,40 @@ final class MainViewController: UIViewController {
         pageVC.setViewControllers([vc], direction: .forward, animated: true)
         pageControl.currentPage = currentIndex
         navigationItem.title = name
+    }
+
+    // MARK: - Delete
+
+    private func deleteCity(_ city: CityModel, pageVC removedVC: CityWeatherViewController) {
+        guard let index = pageViewControllers.firstIndex(of: removedVC) else { return }
+
+        // Не даём удалить последний оставшийся город — приложению нужен хотя бы один
+        guard cities.count > 1 else {
+            let alert = UIAlertController(
+                title: "Нельзя удалить",
+                message: "Должен остаться хотя бы один город",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        cityRepository.deleteCity(withId: city.id)
+        cities.remove(at: index)
+        pageViewControllers.remove(at: index)
+
+        pageControl.numberOfPages = pageViewControllers.count
+
+        // После удаления показываем соседнюю страницу — предыдущую, если есть,
+        // иначе следующую (если удаляли первую)
+        let newIndex = min(index, pageViewControllers.count - 1)
+        currentIndex = newIndex
+        pageControl.currentPage = newIndex
+
+        let direction: UIPageViewController.NavigationDirection = index == 0 ? .forward : .reverse
+        pageVC.setViewControllers([pageViewControllers[newIndex]], direction: direction, animated: true)
+        navigationItem.title = cities[newIndex].name
     }
 
     // MARK: - Actions

@@ -6,6 +6,10 @@ final class CityWeatherViewController: UIViewController {
     var viewModel = WeatherViewModel()
     weak var coordinator: MainCoordinator?
 
+    /// Вызывается по долгому нажатию на карточку погоды — родитель показывает
+    /// подтверждение и удаляет город
+    var onDeleteRequested: (() -> Void)?
+
     // MARK: - UI
 
     private let scrollView: UIScrollView = {
@@ -25,6 +29,7 @@ final class CityWeatherViewController: UIViewController {
         let v = UIView()
         v.backgroundColor = UIColor(red: 0.12, green: 0.33, blue: 0.60, alpha: 1.0)
         v.layer.cornerRadius = 16
+        v.isUserInteractionEnabled = true
         v.translatesAutoresizingMaskIntoConstraints = false
         return v
     }()
@@ -168,6 +173,7 @@ final class CityWeatherViewController: UIViewController {
         view.backgroundColor = UIColor(red: 0.97, green: 0.97, blue: 0.98, alpha: 1)
         setupUI()
         setupBindings()
+        setupDeleteGesture()
         viewModel.loadInitialData()
     }
 
@@ -281,6 +287,35 @@ final class CityWeatherViewController: UIViewController {
         daysButton.addTarget(self, action: #selector(daysToggleTapped), for: .touchUpInside)
     }
 
+    // MARK: - Delete gesture
+
+    private func setupDeleteGesture() {
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPress.minimumPressDuration = 0.5
+        weatherCard.addGestureRecognizer(longPress)
+    }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+
+        // Лёгкая тактильная отдача — сигнал что жест распознан
+        let feedback = UIImpactFeedbackGenerator(style: .medium)
+        feedback.impactOccurred()
+
+        let alert = UIAlertController(
+            title: "Удалить город?",
+            message: "\(cityName) будет удалён из списка городов",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Удалить", style: .destructive) { [weak self] _ in
+            self?.onDeleteRequested?()
+        })
+        present(alert, animated: true)
+    }
+
+    // MARK: - Bindings
+
     private func setupBindings() {
         viewModel.onDataUpdate = { [weak self] in
             DispatchQueue.main.async { self?.updateUI() }
@@ -307,7 +342,14 @@ final class CityWeatherViewController: UIViewController {
         hourlyCollectionView.reloadData()
         tableView.reloadData()
         tableHeightConstraint?.constant = CGFloat(visibleDaysCount()) * 72
-        view.layoutIfNeeded()
+
+        // Лейаутим только если view реально уже в окне — иначе UIKit ругается,
+        // что PageViewController может готовить эту страницу заранее, до показа
+        if view.window != nil {
+            view.layoutIfNeeded()
+        } else {
+            view.setNeedsLayout()
+        }
     }
 
     private func visibleDaysCount() -> Int {
@@ -325,7 +367,9 @@ final class CityWeatherViewController: UIViewController {
         daysButton.setTitle(showAllDays ? "7 дней" : "25 дней", for: .normal)
         tableHeightConstraint?.constant = CGFloat(visibleDaysCount()) * 72
         tableView.reloadData()
-        UIView.animate(withDuration: 0.3) { self.view.layoutIfNeeded() }
+        if view.window != nil {
+            UIView.animate(withDuration: 0.3) { self.view.layoutIfNeeded() }
+        }
     }
 }
 
