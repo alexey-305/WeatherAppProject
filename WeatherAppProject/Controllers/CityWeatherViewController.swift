@@ -1,4 +1,5 @@
 import UIKit
+import WidgetKit
 
 final class CityWeatherViewController: UIViewController {
 
@@ -9,6 +10,10 @@ final class CityWeatherViewController: UIViewController {
     /// Вызывается по долгому нажатию на карточку погоды — родитель показывает
     /// подтверждение и удаляет город
     var onDeleteRequested: (() -> Void)?
+
+    /// Главный (первый) город — только для него пишем снимок в WidgetDataStore,
+    /// иначе свайп между городами будет дёргать виджет на каждый
+    var isPrimaryCity: Bool = false
 
     // MARK: - UI
 
@@ -298,7 +303,6 @@ final class CityWeatherViewController: UIViewController {
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
 
-        // Лёгкая тактильная отдача — сигнал что жест распознан
         let feedback = UIImpactFeedbackGenerator(style: .medium)
         feedback.impactOccurred()
 
@@ -339,12 +343,14 @@ final class CityWeatherViewController: UIViewController {
         sunriseLabel.text = "🌅\n05:41"
         sunsetLabel.text = "🌇\n19:31"
 
+        if isPrimaryCity {
+            saveSnapshotForWidget(first: first)
+        }
+
         hourlyCollectionView.reloadData()
         tableView.reloadData()
         tableHeightConstraint?.constant = CGFloat(visibleDaysCount()) * 72
 
-        // Лейаутим только если view реально уже в окне — иначе UIKit ругается,
-        // что PageViewController может готовить эту страницу заранее, до показа
         if view.window != nil {
             view.layoutIfNeeded()
         } else {
@@ -355,6 +361,23 @@ final class CityWeatherViewController: UIViewController {
     private func visibleDaysCount() -> Int {
         let total = viewModel.dailyItems().count
         return showAllDays ? min(total, 25) : min(total, 7)
+    }
+
+    // MARK: - Widget
+
+    /// Пишет лёгкий снимок погоды в App Group, чтобы виджет на главном экране
+    /// мог его прочитать, и просит WidgetKit обновить таймлайн прямо сейчас
+    private func saveSnapshotForWidget(first: ForecastItem) {
+        let snapshot = WidgetWeatherSnapshot(
+            cityName: cityName,
+            temperature: first.temperature,
+            condition: first.condition.capitalized,
+            tempMin: first.temperature - 3,
+            tempMax: first.temperature + 3,
+            updatedAt: Date()
+        )
+        WidgetDataStore.save(snapshot)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     @objc private func detailTapped() {

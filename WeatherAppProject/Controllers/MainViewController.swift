@@ -123,6 +123,7 @@ final class MainViewController: UIViewController {
         let vm = WeatherViewModel()
         vm.setLocation(lat: city.lat, lon: city.lon)
         vc.viewModel = vm
+        vc.isPrimaryCity = (city.id == cities.first?.id)
         vc.onDeleteRequested = { [weak self, weak vc] in
             guard let self, let vc else { return }
             self.deleteCity(city, pageVC: vc)
@@ -169,6 +170,11 @@ final class MainViewController: UIViewController {
         cities.remove(at: index)
         pageViewControllers.remove(at: index)
 
+        // Пересчитываем кто теперь главный город для виджета
+        for (i, page) in pageViewControllers.enumerated() {
+            page.isPrimaryCity = (i == 0)
+        }
+
         pageControl.numberOfPages = pageViewControllers.count
 
         // После удаления показываем соседнюю страницу — предыдущую, если есть,
@@ -180,6 +186,11 @@ final class MainViewController: UIViewController {
         let direction: UIPageViewController.NavigationDirection = index == 0 ? .forward : .reverse
         pageVC.setViewControllers([pageViewControllers[newIndex]], direction: direction, animated: true)
         navigationItem.title = cities[newIndex].name
+
+        // Если удалили первый город — просим новую первую страницу обновить снимок для виджета
+        if newIndex == 0 {
+            pageViewControllers[0].updateUI()
+        }
     }
 
     // MARK: - Actions
